@@ -1,0 +1,25 @@
+{
+    "manifest_version": 3,
+    "name": "Slowcial",
+    "version": "0.1.0",
+    "description": "Slow down infinite social feeds by adding viewport breathing space.",
+    "permissions": ["storage"],
+    "host_permissions": ["https://www.instagram.com/*"],
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Slowcial"
+    },
+    "content_scripts": [
+      {
+        "matches": ["https://www.instagram.com/*"],
+        "js": ["content.js"],
+        "run_at": "document_idle"
+      }
+    ],
+    "browser_specific_settings": {
+      "gecko": {
+        "id": "slowcial@example.com",
+        "strict_min_version": "109.0"
+      }
+    }
+  }
