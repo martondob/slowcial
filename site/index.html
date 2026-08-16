@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Slowcial is an experimental Firefox extension that inserts viewport-sized space into Instagram feeds to interrupt automatic scrolling.">
+  <title>Slowcial — intentional space in infinite feeds</title>
+  <link rel="icon" href="assets/favicon.png" type="image/png">
+  <link rel="icon" href="assets/slowcial-logo.svg" type="image/svg+xml" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="mark" href="#top" aria-label="Slowcial home">
+      <img src="assets/slowcial-logo.png" alt="" width="28" height="28">
+      <span>Slowcial</span>
+    </a>
+    <nav>
+      <a href="#problem">Problem</a>
+      <a href="#experiment">Experiment</a>
+      <a href="#engineering">Engineering</a>
+      <a href="https://github.com/martondob/slowcial">Source</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-stage" aria-hidden="true">
+        <div class="hero-feed">
+          <div class="feed-block feed-a">
+            <div class="feed-meta"></div>
+            <div class="feed-media"></div>
+          </div>
+          <div class="gap-band">
+            <span>1× viewport gap</span>
+          </div>
+          <div class="feed-block feed-b">
+            <div class="feed-meta"></div>
+            <div class="feed-media"></div>
+          </div>
+        </div>
+        <div class="session-chip">
+          <strong>12</strong>
+          <span>posts · 4m 18s</span>
+        </div>
+      </div>
+
+      <div class="hero-copy">
+        <img class="hero-logo" src="assets/slowcial-logo.png" alt="Slowcial">
+        <h1 id="hero-title">Slowcial</h1>
+        <p class="lede">
+          Viewport-sized breathing room inside Instagram’s infinite feed —
+          friction without a blocker.
+        </p>
+        <div class="cta-row">
+          <a class="cta primary" href="#install">Install locally</a>
+          <a class="cta ghost" href="https://github.com/martondob/slowcial">View source</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem" class="band">
+      <h2>The problem</h2>
+      <p>
+        Infinite feeds collapse distance between items until scrolling becomes automatic.
+        Most “solutions” either block the site or wrap the habit in wellness language.
+        Slowcial tests a narrower idea: keep the feed, change the spacing.
+      </p>
+    </section>
+
+    <section id="experiment" class="band band-split">
+      <div>
+        <h2>The experiment</h2>
+        <p>
+          On Instagram, Slowcial injects CSS that adds a configurable viewport multiple
+          (<code>1×</code>, <code>1.5×</code>, <code>2×</code>) between posts. A floating
+          session widget tracks elapsed time and posts centered in the viewport.
+          Enable/disable and gap size sync through <code>browser.storage.sync</code>.
+        </p>
+      </div>
+      <ul class="facts">
+        <li><span>Target</span> Instagram (Firefox-first, MV3)</li>
+        <li><span>Mechanism</span> Content-script CSS + observers</li>
+        <li><span>Controls</span> Gap preset + enable toggle</li>
+        <li><span>Session</span> Viewed-post count + elapsed time</li>
+      </ul>
+    </section>
+
+    <section id="engineering" class="band">
+      <h2>Technical highlights</h2>
+      <ol class="tech">
+        <li>
+          <strong>Third-party DOM augmentation</strong>
+          Spacing targets Instagram’s feed articles with conservative selectors and
+          graceful no-op when markup shifts.
+        </li>
+        <li>
+          <strong>Lifecycle-safe injection</strong>
+          A <code>MutationObserver</code> re-applies the style tag and session widget if
+          SPA navigation removes them — without stacking duplicate listeners.
+        </li>
+        <li>
+          <strong>Visibility-aware counting</strong>
+          Viewed posts are deduped with a <code>WeakSet</code> and attributed when an
+          article is centered in the viewport (scroll/resize rAF + light interval).
+        </li>
+        <li>
+          <strong>Minimal privilege surface</strong>
+          Only <code>storage</code> + Instagram host permissions. No analytics, no
+          content scraping, no account access.
+        </li>
+        <li>
+          <strong>UI isolation</strong>
+          Injected chrome uses namespaced IDs/classes and high z-index; host page
+          styling is limited to intentional margin rules.
+        </li>
+      </ol>
+    </section>
+
+    <section id="status" class="band band-status">
+      <h2>Current status</h2>
+      <p>
+        Demonstrable prototype for Instagram on Firefox. Instagram’s DOM is a moving
+        target — selectors may need occasional updates.
+      </p>
+      <p class="status-note">
+        Full readiness notes live in the repo’s
+        <a href="https://github.com/martondob/slowcial/blob/main/SHOWCASE_STATUS.md">SHOWCASE_STATUS.md</a>.
+      </p>
+    </section>
+
+    <section id="install" class="band band-install">
+      <h2>Run it locally</h2>
+      <ol class="steps">
+        <li>Clone <a href="https://github.com/martondob/slowcial">martondob/slowcial</a>.</li>
+        <li>Firefox → <code>about:debugging#/runtime/this-firefox</code></li>
+        <li>Load Temporary Add-on → select <code>extension/manifest.json</code></li>
+        <li>Open Instagram, set a gap in the popup, scroll the feed.</li>
+      </ol>
+      <p class="fineprint">
+        Temporary add-ons unload when Firefox restarts. No store packaging yet.
+      </p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div>
+      <img src="assets/slowcial-logo.png" alt="" width="22" height="22">
+      <strong>Slowcial</strong>
+    </div>
+    <p>Experimental browser extension · portfolio case study</p>
+  </footer>
+
+  <script>
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduce) {
+      const stage = document.querySelector(".hero-feed");
+      if (stage) {
+        const onScroll = () => {
+          const y = Math.min(window.scrollY * 0.05, 28);
+          stage.style.transform = `translateY(${y}px)`;
+        };
+        window.addEventListener("scroll", onScroll, { passive: true });
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) entry.target.classList.add("in-view");
+          });
+        },
+        { threshold: 0.18 }
+      );
+      document.querySelectorAll(".band").forEach((el) => observer.observe(el));
+    } else {
+      document.querySelectorAll(".band").forEach((el) => el.classList.add("in-view"));
+    }
+  </script>
+</body>
+</html>

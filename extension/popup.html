@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slowcial</title>
+  <style>
+    :root {
+      --ink: #141414;
+      --muted: rgba(20, 20, 20, 0.58);
+      --line: rgba(20, 20, 20, 0.12);
+      --surface: #f0f1f3;
+      --accent: #3d6b5a;
+      --accent-soft: rgba(61, 107, 90, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      width: 260px;
+      color: var(--ink);
+      background: var(--surface);
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .shell {
+      padding: 14px 14px 16px;
+      border-top: 3px solid var(--accent);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .brand img {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: block;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    select {
+      appearance: none;
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background:
+        linear-gradient(45deg, transparent 50%, var(--ink) 50%) calc(100% - 16px) / 5px 5px no-repeat,
+        linear-gradient(135deg, var(--ink) 50%, transparent 50%) calc(100% - 11px) / 5px 5px no-repeat,
+        #fff;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .toggle span {
+      font-weight: 600;
+    }
+
+    .toggle input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .hint {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="brand">
+      <img src="icons/slowcial-logo.png" alt="" width="28" height="28">
+      <div>
+        <h1>Slowcial</h1>
+        <p>Space between posts</p>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="gapMode">Gap size</label>
+      <select id="gapMode">
+        <option value="1">1× viewport</option>
+        <option value="1.5">1.5× viewport</option>
+        <option value="2">2× viewport</option>
+      </select>
+    </div>
+
+    <label class="toggle" for="enabled">
+      <span>Enabled</span>
+      <input type="checkbox" id="enabled">
+    </label>
+
+    <p class="hint">Applies to Instagram feed posts via injected spacing.</p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

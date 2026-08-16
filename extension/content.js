@@ -51,7 +51,7 @@ const DEFAULTS = {
           0 2px 8px rgba(0, 0, 0, 0.04);
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         overflow: hidden;
         transition:
           transform 160ms ease,
@@ -241,7 +241,7 @@ const DEFAULTS = {
           <div class="slowcial-topbar">
             <div class="slowcial-titlewrap">
               <div class="slowcial-title">Slowcial</div>
-              <div class="slowcial-subtitle">calm session view</div>
+              <div class="slowcial-subtitle">session</div>
             </div>
   
             <div class="slowcial-actions">
@@ -272,7 +272,7 @@ const DEFAULTS = {
           </div>
   
           <div class="slowcial-footer">
-            Spacious scrolling, lighter tempo.
+            Viewport gaps between posts.
           </div>
         </div>
       `;

@@ -1,0 +1,16 @@
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+build/
+.cache/
+.vscode/
+.idea/
+*.xpi
+*.zip
+web-ext-artifacts/
+.web-extension-id
