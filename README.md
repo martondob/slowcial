@@ -36,20 +36,6 @@ Built as a compact portfolio case study in browser-extension engineering — dyn
 
 ---
 
-## Demo
-
-Landing page (static): open [`site/index.html`](./site/index.html) or serve the `site/` folder.
-
-```bash
-# from repo root
-python3 -m http.server 4173 --directory site
-# → http://localhost:4173
-```
-
-Logo: [`assets/slowcial-logo.png`](./assets/slowcial-logo.png) / [`assets/slowcial-logo.svg`](./assets/slowcial-logo.svg) · site + extension icons are derived copies.
-
----
-
 ## How it works
 
 ```
@@ -83,12 +69,8 @@ extension/          Firefox MV3 add-on (load this folder)
   content.js        Feed spacing + session widget
   popup.html|js     Gap + enable controls
   icons/            Toolbar PNGs derived from assets/slowcial-logo.png
-site/               Static showcase landing page
-  index.html
-  styles.css
-  assets/
-docs/               Briefs / notes
-SHOWCASE_STATUS.md  What’s demo-ready vs experimental
+assets/             Logo masters
+docs/               GitHub Pages landing (not required to run the extension)
 ```
 
 ---
