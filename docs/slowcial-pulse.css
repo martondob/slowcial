@@ -1,0 +1,135 @@
+.slowcial-pulse {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 12px;
+
+  background: #112c4f;
+  isolation: isolate;
+}
+
+/*
+ * The layers are intentionally much larger than the visible square.
+ * We animate transforms rather than continuously recalculating gradients.
+ */
+.slowcial-layer {
+  position: absolute;
+  inset: -35%;
+
+  will-change: transform, opacity;
+  transform-origin: center;
+}
+
+/* Broad Yellow-Submarine-ish sweeping bands */
+.layer-a {
+  background:
+    repeating-conic-gradient(
+      from 15deg at 42% 48%,
+      #ffca28 0deg 14deg,
+      #f56b2a 14deg 29deg,
+      #d93670 29deg 44deg,
+      #25a9bd 44deg 60deg,
+      #145b86 60deg 76deg,
+      #76aa43 76deg 91deg,
+      #ffca28 91deg 108deg
+    );
+
+  animation: slowcial-spin-a 19s linear infinite;
+}
+
+/* Large circular / spiral-like shapes */
+.layer-b {
+  background:
+    radial-gradient(
+      circle at 20% 28%,
+      #ffca28 0 6%,
+      #ee6528 6% 11%,
+      #d82f69 11% 17%,
+      #156c93 17% 23%,
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 75% 25%,
+      #36abc0 0 7%,
+      #17547c 7% 13%,
+      #f4ca32 13% 18%,
+      #e24969 18% 25%,
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 65% 76%,
+      #7caf49 0 7%,
+      #f5d43d 7% 13%,
+      #ef7427 13% 19%,
+      #ca356e 19% 25%,
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 24% 74%,
+      #e55574 0 8%,
+      #36aabd 8% 14%,
+      #fecb35 14% 20%,
+      #ef702a 20% 26%,
+      transparent 27%
+    );
+
+  animation: slowcial-spin-b 27s ease-in-out infinite alternate;
+}
+
+/* Smaller dots / bubbles */
+.layer-c {
+  background:
+    radial-gradient(circle at 15% 20%, #ffcf32 0 3%, transparent 3.5%),
+    radial-gradient(circle at 31% 61%, #62aa55 0 2.6%, transparent 3.1%),
+    radial-gradient(circle at 55% 16%, #eb667e 0 3.4%, transparent 3.9%),
+    radial-gradient(circle at 78% 55%, #ef762a 0 3%, transparent 3.5%),
+    radial-gradient(circle at 61% 81%, #35a6b5 0 3.4%, transparent 3.9%),
+    radial-gradient(circle at 88% 82%, #ffd237 0 2.5%, transparent 3%),
+    radial-gradient(circle at 12% 80%, #dd3e72 0 3.2%, transparent 3.7%);
+
+  animation: slowcial-drift 13s ease-in-out infinite alternate;
+}
+
+@keyframes slowcial-spin-a {
+  from {
+    transform: rotate(0deg) scale(1.08);
+  }
+
+  to {
+    transform: rotate(360deg) scale(1.08);
+  }
+}
+
+@keyframes slowcial-spin-b {
+  0% {
+    transform: rotate(0deg) translate3d(-2%, 1%, 0) scale(1);
+    opacity: 0.9;
+  }
+
+  50% {
+    transform: rotate(-80deg) translate3d(4%, -2%, 0) scale(1.12);
+    opacity: 0.72;
+  }
+
+  100% {
+    transform: rotate(-150deg) translate3d(-1%, 4%, 0) scale(0.96);
+    opacity: 0.9;
+  }
+}
+
+@keyframes slowcial-drift {
+  from {
+    transform: translate3d(-5%, -3%, 0) rotate(-12deg) scale(1);
+  }
+
+  to {
+    transform: translate3d(6%, 5%, 0) rotate(18deg) scale(1.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slowcial-layer {
+    animation: none;
+  }
+}

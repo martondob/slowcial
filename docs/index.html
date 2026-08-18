@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="slowcial-pulse.css">
 </head>
 <body>
   <header class="top">
@@ -41,24 +42,18 @@
           </div>
         </div>
 
-        <div class="hero-stage" aria-hidden="true">
+        <div class="hero-stage">
           <div class="phone">
-            <div class="hero-feed">
-              <div class="feed-block feed-a">
-                <div class="feed-meta"></div>
-                <div class="feed-media"></div>
-              </div>
-              <div class="gap-band">
-                <span>1× viewport gap</span>
-              </div>
-              <div class="feed-block feed-b">
-                <div class="feed-meta"></div>
-                <div class="feed-media"></div>
-              </div>
-            </div>
-            <div class="session-chip">
-              <strong>12</strong>
-              <span>posts · 4m 18s</span>
+            <div
+              class="hero-feed"
+              id="demo-feed"
+              tabindex="0"
+              role="region"
+              aria-label="Interactive Slowcial feed demo — scroll to feel the gaps"
+            ></div>
+            <div class="session-chip" aria-live="polite">
+              <strong id="demo-count">0</strong>
+              <span id="demo-meta">posts · 0s</span>
             </div>
           </div>
         </div>
@@ -159,16 +154,155 @@
 
   <script>
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!reduce) {
-      const stage = document.querySelector(".hero-feed");
-      if (stage) {
-        const onScroll = () => {
-          const y = Math.min(window.scrollY * 0.05, 28);
-          stage.style.transform = `translateY(${y}px)`;
-        };
-        window.addEventListener("scroll", onScroll, { passive: true });
+
+    (function initDemoFeed() {
+      const feed = document.getElementById("demo-feed");
+      const countEl = document.getElementById("demo-count");
+      const metaEl = document.getElementById("demo-meta");
+      if (!feed || !countEl || !metaEl) return;
+
+      const startedAt = performance.now();
+      let postIndex = 0;
+      let viewed = 0;
+      const seen = new WeakSet();
+      let appending = false;
+
+      const hueFor = (i) => (i * 47) % 360;
+      const delayFor = (i) => `${-((i * 3.7) % 19)}s`;
+
+      function makePulse(i) {
+        const pulse = document.createElement("div");
+        pulse.className = "slowcial-pulse";
+        pulse.setAttribute("aria-hidden", "true");
+        pulse.style.filter = `hue-rotate(${hueFor(i)}deg)`;
+
+        ["a", "b", "c"].forEach((key) => {
+          const layer = document.createElement("div");
+          layer.className = `slowcial-layer layer-${key}`;
+          layer.style.animationDelay = delayFor(i + key.charCodeAt(0));
+          pulse.appendChild(layer);
+        });
+
+        return pulse;
       }
 
+      function makePost() {
+        const i = postIndex++;
+        const article = document.createElement("article");
+        article.className = "feed-block";
+        article.dataset.post = String(i + 1);
+
+        const media = document.createElement("div");
+        media.className = "feed-media";
+        media.appendChild(makePulse(i));
+        article.appendChild(media);
+        return article;
+      }
+
+      function makeGap() {
+        const gap = document.createElement("div");
+        gap.className = "gap-band";
+        gap.innerHTML = "<span>1× viewport gap</span>";
+        return gap;
+      }
+
+      function appendUnit() {
+        feed.appendChild(makePost());
+        feed.appendChild(makeGap());
+      }
+
+      function seed(n = 5) {
+        for (let i = 0; i < n; i++) appendUnit();
+      }
+
+      function formatElapsed(ms) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return m > 0 ? `${m}m ${s}s` : `${s}s`;
+      }
+
+      function updateChip() {
+        countEl.textContent = String(viewed);
+        metaEl.textContent = `posts · ${formatElapsed(performance.now() - startedAt)}`;
+      }
+
+      function markCentered() {
+        const mid = feed.scrollTop + feed.clientHeight * 0.5;
+        const posts = feed.querySelectorAll(".feed-block");
+        posts.forEach((post) => {
+          const top = post.offsetTop;
+          const bottom = top + post.offsetHeight;
+          if (mid >= top && mid <= bottom && !seen.has(post)) {
+            seen.add(post);
+            viewed += 1;
+            updateChip();
+          }
+        });
+      }
+
+      function ensureTail() {
+        if (appending) return;
+        const remaining = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+        if (remaining < feed.clientHeight * 1.5) {
+          appending = true;
+          appendUnit();
+          appending = false;
+        }
+      }
+
+      function pruneHead() {
+        // Keep DOM bounded while preserving scroll position.
+        while (feed.children.length > 24 && feed.scrollTop > feed.clientHeight * 3) {
+          const first = feed.firstElementChild;
+          if (!first) break;
+          const h = first.offsetHeight;
+          feed.removeChild(first);
+          feed.scrollTop -= h;
+        }
+      }
+
+      function syncGapSize() {
+        feed.style.setProperty("--gap-h", `${Math.round(feed.clientHeight)}px`);
+      }
+
+      seed(5);
+      syncGapSize();
+      updateChip();
+      markCentered();
+
+      let ticking = false;
+      feed.addEventListener(
+        "scroll",
+        () => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(() => {
+            markCentered();
+            ensureTail();
+            pruneHead();
+            ticking = false;
+          });
+        },
+        { passive: true }
+      );
+
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(syncGapSize).observe(feed);
+      } else {
+        window.addEventListener("resize", syncGapSize);
+      }
+
+      const timer = window.setInterval(updateChip, 1000);
+
+      window.addEventListener(
+        "beforeunload",
+        () => window.clearInterval(timer),
+        { once: true }
+      );
+    })();
+
+    if (!reduce) {
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
