@@ -456,24 +456,46 @@ async function clearSessionIntent() {
   }
 }
 
-function hydrateFromIntent(intent) {
+function hydrateFromIntent(intent, { reset = false } = {}) {
   sessionIntent = intent;
-  viewedCount = intent?.viewedCount || 0;
-  activeMs = intent?.activeMs || 0;
-  runningSince = intent?.runningSince ?? null;
-  viewedArticles = new WeakSet();
-  pendingBoundArticle = null;
-  forcePostBound = false;
 
+  if (!intent) {
+    viewedCount = 0;
+    activeMs = 0;
+    runningSince = null;
+    viewedArticles = new WeakSet();
+    pendingBoundArticle = null;
+    forcePostBound = false;
+    return;
+  }
+
+  // Rebuild WeakSet from DOM marks.
+  viewedArticles = new WeakSet();
+  let domMarked = 0;
   for (const article of getFeedArticles()) {
     if (article.getAttribute(VIEWED_ATTR) === "1") {
       viewedArticles.add(article);
+      domMarked += 1;
     }
+  }
+
+  const incoming = intent.viewedCount || 0;
+  // Never let a stale storage echo clobber a live counter (this was the
+  // "first post never counts" bug: count→1, then hydrate from write of 0).
+  viewedCount = reset
+    ? Math.max(incoming, domMarked)
+    : Math.max(viewedCount, incoming, domMarked);
+
+  activeMs = reset ? intent.activeMs || 0 : Math.max(activeMs, intent.activeMs || 0);
+  runningSince = intent.runningSince ?? runningSince;
+
+  if (reset) {
+    pendingBoundArticle = null;
+    forcePostBound = false;
   }
 
   // After refresh: recover "waiting for Nth post to leave focus" if needed.
   if (
-    intent &&
     !intent.boundHitShown &&
     intent.targetPosts != null &&
     viewedCount >= intent.targetPosts
@@ -486,7 +508,8 @@ function hydrateFromIntent(intent) {
       isArticleInFocus(centered)
     ) {
       pendingBoundArticle = centered;
-    } else {
+      startBoundWatch();
+    } else if (reset) {
       forcePostBound = true;
     }
   }
@@ -791,6 +814,11 @@ async function startSessionFromForm() {
     pendingBoundArticle = null;
     forcePostBound = false;
     unmuteFeedMedia();
+    // Clear marks from a previous session on this page so storage echoes
+    // can't resurrect an old viewedCount via DOM attributes.
+    for (const el of document.querySelectorAll(`[${VIEWED_ATTR}]`)) {
+      el.removeAttribute(VIEWED_ATTR);
+    }
 
     await setSessionIntent({
       motivation,
@@ -1466,7 +1494,7 @@ async function apply() {
     return;
   }
 
-  hydrateFromIntent(intent);
+  hydrateFromIntent(intent, { reset: false });
   syncClockToFocus();
   await createOrUpdateWidget();
 
@@ -1476,6 +1504,7 @@ async function apply() {
     restoreActiveOverlay();
   } else {
     maybeShowBoundHit();
+    if (viewedCount === 0) primeCurrentArticleCount();
   }
 }
 
@@ -1540,7 +1569,12 @@ function listenForSettingChanges() {
     if (areaName === "local" && changes.sessionIntent) {
       const next = changes.sessionIntent.newValue || null;
       if (!next) return;
-      hydrateFromIntent(next);
+      // Content script owns the live counters. Ignore storage echoes that would
+      // rewind viewedCount (setSessionIntent(0) arriving after we already counted).
+      if (sessionIntent && (next.viewedCount || 0) < viewedCount) {
+        return;
+      }
+      hydrateFromIntent(next, { reset: false });
       updateWidgetValues();
     }
   });
