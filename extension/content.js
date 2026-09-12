@@ -31,7 +31,7 @@ let settingsListenerAttached = false;
 let scanListenersAttached = false;
 let focusListenersAttached = false;
 let persistClockTimer = null;
-/** Article that completed the post target; bound waits until it leaves the viewport. */
+/** Article that completed the post target; bound waits until it leaves / next peeks. */
 let pendingBoundArticle = null;
 /** After refresh, if we already passed the post target, fire bound on next check. */
 let forcePostBound = false;
@@ -39,6 +39,7 @@ let forcePostBound = false;
 let setupIsExtension = false;
 let feedMutedByBound = false;
 let feedMuteObserver = null;
+let boundWatchRaf = null;
 let feedScrollLocked = false;
 let lockedScrollX = 0;
 let lockedScrollY = 0;
@@ -443,6 +444,7 @@ async function clearSessionIntent() {
   pendingBoundArticle = null;
   forcePostBound = false;
   setupIsExtension = false;
+  stopBoundWatch();
   setFeedScrollLocked(false);
   unmuteFeedMedia();
   try {
@@ -820,6 +822,17 @@ async function startSessionFromForm() {
   await createOrUpdateWidget();
   startFeedScanning();
   startTimer();
+  // Count the post already on screen — otherwise the first one is skipped (n+1 bug).
+  primeCurrentArticleCount();
+}
+
+function primeCurrentArticleCount() {
+  const run = () => countCurrentArticle();
+  run();
+  requestAnimationFrame(run);
+  setTimeout(run, 100);
+  setTimeout(run, 400);
+  setTimeout(run, 1000);
 }
 
 function showBrakeOverlay() {
@@ -1017,20 +1030,37 @@ function isArticleInViewport(article) {
 }
 
 function isOtherArticleEncroaching(targetArticle) {
+  if (!targetArticle || !targetArticle.isConnected) return false;
   const targetRect = targetArticle.getBoundingClientRect();
-  const center = window.innerHeight / 2;
   for (const article of getFeedArticles()) {
     if (article === targetArticle) continue;
     const rect = article.getBoundingClientRect();
-    // Only care about the next post coming up from below — ignore previous ones still peeking above.
-    if (rect.top < targetRect.top) continue;
-    if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
-    if (rect.top <= center && rect.bottom >= center) return true;
-    const visible =
-      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
-    if (visible > window.innerHeight * 0.18) return true;
+    // Only later posts (below). Ignore previous ones still peeking above.
+    if (rect.top < targetRect.top - 1) continue;
+    // ANY visible pixel of the next post — block before it can hook.
+    if (rect.bottom > 0 && rect.top < window.innerHeight) return true;
   }
   return false;
+}
+
+function startBoundWatch() {
+  if (boundWatchRaf != null) return;
+  const tick = () => {
+    boundWatchRaf = null;
+    if (!sessionIntent || sessionIntent.boundHitShown || !pendingBoundArticle) return;
+    maybeShowBoundHit();
+    if (pendingBoundArticle && sessionIntent && !sessionIntent.boundHitShown) {
+      boundWatchRaf = requestAnimationFrame(tick);
+    }
+  };
+  boundWatchRaf = requestAnimationFrame(tick);
+}
+
+function stopBoundWatch() {
+  if (boundWatchRaf != null) {
+    cancelAnimationFrame(boundWatchRaf);
+    boundWatchRaf = null;
+  }
 }
 
 function showBoundOverlay() {
@@ -1135,7 +1165,7 @@ function maybeShowBoundHit() {
       viewedCount >= sessionIntent.targetPosts &&
       pendingBoundArticle
     ) {
-      // Block as soon as the Nth post leaves the viewfield, or the next one encroaches.
+      // Fire before the next post can hook: Nth fully gone, or any next pixel shows.
       if (
         !isArticleInViewport(pendingBoundArticle) ||
         isOtherArticleEncroaching(pendingBoundArticle)
@@ -1149,6 +1179,7 @@ function maybeShowBoundHit() {
 
   forcePostBound = false;
   pendingBoundArticle = null;
+  stopBoundWatch();
   persistIntentPatch({ boundHitShown: true }).catch(() => {});
   showBoundOverlay();
 }
@@ -1241,9 +1272,10 @@ function updateWidgetValues() {
 }
 
 function getFeedArticles() {
-  const scoped = document.querySelectorAll("main article");
-  if (scoped.length > 0) return Array.from(scoped);
-  return Array.from(document.querySelectorAll("article"));
+  const root = document.querySelector("main") || document;
+  const nodeList = root.querySelectorAll("article, [role='article']");
+  if (nodeList.length > 0) return Array.from(nodeList);
+  return Array.from(document.querySelectorAll("article, [role='article']"));
 }
 
 function getCurrentCenteredArticle() {
@@ -1253,10 +1285,19 @@ function getCurrentCenteredArticle() {
   const viewportCenter = window.innerHeight / 2;
   let bestArticle = null;
   let bestDistance = Infinity;
+  let bestArea = 0;
+  let mostVisible = null;
 
   for (const article of articles) {
     const rect = article.getBoundingClientRect();
     if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+
+    const visibleHeight =
+      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    if (visibleHeight > bestArea) {
+      bestArea = visibleHeight;
+      mostVisible = article;
+    }
 
     if (rect.top <= viewportCenter && rect.bottom >= viewportCenter) {
       return article;
@@ -1270,15 +1311,16 @@ function getCurrentCenteredArticle() {
     }
   }
 
-  return bestArticle;
+  // Prefer centered match; otherwise nearest; otherwise most visible (first-post bootstrap).
+  return bestArticle || mostVisible;
 }
 
 function countCurrentArticle() {
   if (!sessionIntent) return;
   if (activeOverlay === "setup" || activeOverlay === "bound") return;
 
-  // Once the post target is reached, never count/center into the next post —
-  // hold until the Nth leaves the viewfield, then show the bound overlay.
+  // Once the post target is reached, never count into the next post —
+  // watch until the Nth leaves / next peeks, then show the bound overlay.
   if (
     sessionIntent.targetPosts != null &&
     viewedCount >= sessionIntent.targetPosts &&
@@ -1300,6 +1342,7 @@ function countCurrentArticle() {
       viewedCount === sessionIntent.targetPosts
     ) {
       pendingBoundArticle = article;
+      startBoundWatch();
     }
 
     schedulePersistClock();
