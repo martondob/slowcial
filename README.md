@@ -26,10 +26,15 @@ Built as a compact portfolio case study in browser-extension engineering — dyn
 | Gap presets: `1×`, `1.5×`, `2×` viewport | Working |
 | Enable / disable from popup | Working |
 | Settings via `browser.storage.sync` | Working |
-| Session widget: posts viewed + elapsed time | Working |
+| Session intent setup (motivation + targets + breaks) | Working |
+| Soft brake reminders with motivation | Working |
+| Soft bound-hit (extend / end) | Working |
+| Session widget: progress vs targets | Working |
+| Focus-aware session timer (pauses when tab hidden) | Working |
 | Widget minimize + persist | Working |
 | Firefox MV3 temporary install | Working |
 | Chrome / Safari / store release | Not in scope yet |
+| Account login / cross-device intent sync | Roadmap only |
 | Multi-network adapters | Roadmap only |
 
 > Honest scope: Instagram’s markup moves. Selectors are conservative and may need updates when Meta ships UI changes.
@@ -42,11 +47,14 @@ Built as a compact portfolio case study in browser-extension engineering — dyn
 Instagram DOM
   → content script (content.js)
     → inject / refresh spacing CSS
-    → inject session widget
+    → if enabled && no session intent → setup overlay
+    → Start session → browser.storage.session intent
+    → inject session widget (progress + motivation)
     → scroll/resize (+ interval) → centered-article detection
-    → WeakSet dedupe → viewed count
+    → WeakSet dedupe → viewed count → soft brakes / bound-hit
+    → visibility/focus → pause/resume active session timer
   → popup UI writes settings
-  → browser.storage.sync
+  → browser.storage.sync (gaps + intent defaults)
   → storage.onChanged → re-apply
   → MutationObserver → rehydrate if SPA removes injected nodes
 ```
@@ -54,10 +62,12 @@ Instagram DOM
 **Interesting frontend problems this touches:**
 
 1. **Augmenting a hostile/moving DOM** — Instagram is an SPA; article nodes come and go. Spacing uses targeted selectors (`main article > div:first-child` when possible) rather than rewriting the feed.
-2. **Idempotent lifecycle** — style tag + widget are upserted by ID; removal is watched once; storage listeners and scroll handlers attach once.
+2. **Idempotent lifecycle** — style tag + widget/overlays are upserted by ID; removal is watched once; storage listeners and scroll handlers attach once.
 3. **Counting without double-counting** — centered article heuristic + `WeakSet` + `data-slowcial-viewed` attribute.
 4. **Performance on scroll** — scroll/resize handlers coalesce through `requestAnimationFrame`; a low-frequency interval catches edge cases.
-5. **Minimal privileges** — `storage` + `https://www.instagram.com/*` only. No telemetry, no content upload, no account APIs.
+5. **Session intent vs durable prefs** — live run in `storage.session`; gap/defaults in `storage.sync` (seam for later cross-device prefs).
+6. **Active-time clock** — elapsed accumulates only while the tab is visible/focused, matching how IG pauses video off-tab.
+7. **Minimal privileges** — `storage` + `https://www.instagram.com/*` only. No telemetry, no content upload, no account APIs.
 
 ---
 
@@ -88,7 +98,12 @@ Temporary add-ons unload when Firefox restarts. That’s expected for this stage
 
 - [ ] Popup enable toggle immediately adds/removes feed gaps
 - [ ] Gap select switches between 1 / 1.5 / 2 viewport multiples
-- [ ] Session widget appears; viewed count increments when a post is centered
+- [ ] With Slowcial enabled, setup overlay appears before counting
+- [ ] Start session requires motivation + at least one target
+- [ ] Session widget shows progress vs targets and truncated motivation
+- [ ] Break every N shows motivation reminder; Continue resumes
+- [ ] Hitting a target offers Extend / End session
+- [ ] Switching away from the IG tab freezes session time; returning resumes
 - [ ] Minimize state survives reload (storage.sync)
 - [ ] Navigating within Instagram does not duplicate the widget
 - [ ] Disabling leaves the host page usable (no broken layout)
@@ -106,7 +121,8 @@ Temporary add-ons unload when Firefox restarts. That’s expected for this stage
 
 ## Near-term roadmap
 
-- Capture portfolio screenshots / short GIF of real spacing behaviour
+- Capture portfolio screenshots / short GIF of real spacing behaviour (incl. intent + brake)
+- Optional: account / preference sync for motivation defaults across devices
 - Optional: extract pure helpers (gap CSS, duration format, dedupe) for unit tests
 - Optional: Chrome MV3 pass once Firefox path is stable
 
@@ -114,7 +130,7 @@ Temporary add-ons unload when Firefox restarts. That’s expected for this stage
 
 ## Privacy
 
-Slowcial stores only local extension settings (`enabled`, gap mode, widget minimized). It does not collect browsing content, scrape posts, or phone home.
+Slowcial stores local extension settings (`enabled`, gap mode, widget minimized, intent defaults) in `storage.sync`, and the active session intent (motivation, counters) in `storage.session` until the browser quits. It does not collect browsing content, scrape posts, or phone home.
 
 ---
 
