@@ -39,6 +39,8 @@ let forcePostBound = false;
 let setupIsExtension = false;
 let feedMutedByBound = false;
 let feedMuteObserver = null;
+/** Prior muted/volume before we force-mute for the bound dialog. */
+const mediaMuteState = new WeakMap();
 let boundWatchRaf = null;
 let feedScrollLocked = false;
 let lockedScrollX = 0;
@@ -827,12 +829,52 @@ async function startSessionFromForm() {
 }
 
 function primeCurrentArticleCount() {
-  const run = () => countCurrentArticle();
+  const run = () => {
+    // Bypass overlay-state flakiness right after setup closes: mark the
+    // most-visible feed post directly (this is what used to work on init).
+    if (!sessionIntent) return;
+    if (activeOverlay === "bound") return;
+    registerVisibleArticleAsViewed();
+    countCurrentArticle();
+  };
   run();
   requestAnimationFrame(run);
-  setTimeout(run, 100);
-  setTimeout(run, 400);
-  setTimeout(run, 1000);
+  setTimeout(run, 50);
+  setTimeout(run, 200);
+  setTimeout(run, 600);
+  setTimeout(run, 1500);
+}
+
+function registerVisibleArticleAsViewed() {
+  if (!sessionIntent) return;
+  if (activeOverlay === "setup" || activeOverlay === "bound") return;
+  if (
+    sessionIntent.targetPosts != null &&
+    viewedCount >= sessionIntent.targetPosts &&
+    !sessionIntent.boundHitShown
+  ) {
+    return;
+  }
+
+  const article = getCurrentCenteredArticle();
+  if (!article || viewedArticles.has(article)) return;
+
+  viewedArticles.add(article);
+  article.setAttribute(VIEWED_ATTR, "1");
+  viewedCount += 1;
+
+  if (
+    sessionIntent.targetPosts != null &&
+    viewedCount === sessionIntent.targetPosts
+  ) {
+    pendingBoundArticle = article;
+    startBoundWatch();
+  }
+
+  schedulePersistClock();
+  updateWidgetValues();
+  maybeShowBrake();
+  maybeShowBoundHit();
 }
 
 function showBrakeOverlay() {
@@ -865,24 +907,20 @@ async function dismissBrake() {
 function muteFeedMedia() {
   feedMutedByBound = true;
   for (const el of document.querySelectorAll("video, audio")) {
-    el.muted = true;
-    try {
-      el.volume = 0;
-    } catch {
-      // ignore read-only volume edge cases
+    if (!mediaMuteState.has(el)) {
+      mediaMuteState.set(el, { muted: el.muted, volume: el.volume });
     }
+    el.muted = true;
   }
 
   if (feedMuteObserver) return;
   feedMuteObserver = new MutationObserver(() => {
     if (!feedMutedByBound) return;
     for (const el of document.querySelectorAll("video, audio")) {
-      el.muted = true;
-      try {
-        el.volume = 0;
-      } catch {
-        // ignore
+      if (!mediaMuteState.has(el)) {
+        mediaMuteState.set(el, { muted: el.muted, volume: el.volume });
       }
+      el.muted = true;
     }
   });
   feedMuteObserver.observe(document.documentElement, {
@@ -897,14 +935,18 @@ function unmuteFeedMedia() {
     feedMuteObserver.disconnect();
     feedMuteObserver = null;
   }
+  // Restore prior mute state only — never force unmuted (IG starts muted; forcing
+  // muted=false leaves audio playing while the speaker icon still looks crossed out).
   for (const el of document.querySelectorAll("video, audio")) {
-    // Leave muted=false; IG may remute for autoplay policies.
+    const prev = mediaMuteState.get(el);
+    if (!prev) continue;
+    el.muted = prev.muted;
     try {
-      if (el.volume === 0) el.volume = 1;
+      el.volume = prev.volume;
     } catch {
       // ignore
     }
-    el.muted = false;
+    mediaMuteState.delete(el);
   }
 }
 
@@ -1272,10 +1314,21 @@ function updateWidgetValues() {
 }
 
 function getFeedArticles() {
-  const root = document.querySelector("main") || document;
-  const nodeList = root.querySelectorAll("article, [role='article']");
-  if (nodeList.length > 0) return Array.from(nodeList);
-  return Array.from(document.querySelectorAll("article, [role='article']"));
+  // Document-wide — scoping only to main can miss the visible feed on some IG layouts.
+  const all = Array.from(
+    document.querySelectorAll("article, [role='article']")
+  );
+  if (all.length === 0) return all;
+
+  const visible = all.filter((el) => {
+    const rect = el.getBoundingClientRect();
+    return (
+      rect.bottom > 40 &&
+      rect.top < window.innerHeight - 40 &&
+      rect.height > 80
+    );
+  });
+  return visible.length > 0 ? visible : all;
 }
 
 function getCurrentCenteredArticle() {
@@ -1285,8 +1338,8 @@ function getCurrentCenteredArticle() {
   const viewportCenter = window.innerHeight / 2;
   let bestArticle = null;
   let bestDistance = Infinity;
-  let bestArea = 0;
   let mostVisible = null;
+  let bestArea = 0;
 
   for (const article of articles) {
     const rect = article.getBoundingClientRect();
@@ -1311,7 +1364,7 @@ function getCurrentCenteredArticle() {
     }
   }
 
-  // Prefer centered match; otherwise nearest; otherwise most visible (first-post bootstrap).
+  // Fall back to most visible so the opening post always counts.
   return bestArticle || mostVisible;
 }
 
@@ -1330,27 +1383,7 @@ function countCurrentArticle() {
     return;
   }
 
-  const article = getCurrentCenteredArticle();
-
-  if (article && !viewedArticles.has(article) && activeOverlay === "none") {
-    viewedArticles.add(article);
-    article.setAttribute(VIEWED_ATTR, "1");
-    viewedCount += 1;
-
-    if (
-      sessionIntent.targetPosts != null &&
-      viewedCount === sessionIntent.targetPosts
-    ) {
-      pendingBoundArticle = article;
-      startBoundWatch();
-    }
-
-    schedulePersistClock();
-    updateWidgetValues();
-    maybeShowBrake();
-  }
-
-  maybeShowBoundHit();
+  registerVisibleArticleAsViewed();
 }
 
 function startFeedScanning() {
