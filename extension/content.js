@@ -31,10 +31,12 @@ let settingsListenerAttached = false;
 let scanListenersAttached = false;
 let focusListenersAttached = false;
 let persistClockTimer = null;
-/** Article that completed the post target; bound waits until it leaves focus. */
+/** Article that completed the post target; bound waits until it leaves the viewport. */
 let pendingBoundArticle = null;
 /** After refresh, if we already passed the post target, fire bound on next check. */
 let forcePostBound = false;
+/** Setup overlay is collecting an extension segment (counters kept). */
+let setupIsExtension = false;
 let feedMutedByBound = false;
 let feedMuteObserver = null;
 
@@ -430,6 +432,7 @@ async function clearSessionIntent() {
   viewedArticles = new WeakSet();
   pendingBoundArticle = null;
   forcePostBound = false;
+  setupIsExtension = false;
   unmuteFeedMedia();
   try {
     await browser.storage.local.remove("sessionIntent");
@@ -612,17 +615,35 @@ function ensureOverlayRoot() {
   return overlay;
 }
 
-async function showSetupOverlay() {
+async function showSetupOverlay({ extending = false } = {}) {
   activeOverlay = "setup";
+  setupIsExtension = extending;
   const settings = await getSettings();
   const defaults = settings.intentDefaults || DEFAULTS.intentDefaults;
+
+  const prefillPosts = extending
+    ? (sessionIntent?.segmentPosts ?? defaults.targetPosts)
+    : defaults.targetPosts;
+  const prefillMinutes = extending
+    ? (sessionIntent?.segmentMinutes ?? defaults.targetMinutes)
+    : defaults.targetMinutes;
+  const prefillBreak = extending
+    ? (sessionIntent?.segmentBreakEvery ?? defaults.breakEvery)
+    : defaults.breakEvery;
+
   const overlay = ensureOverlayRoot();
 
   overlay.innerHTML = `
     <div class="slowcial-panel" role="dialog" aria-modal="true" aria-labelledby="slowcial-setup-title">
       <p class="slowcial-panel-kicker">Slowcial</p>
-      <h2 class="slowcial-panel-title" id="slowcial-setup-title">Set this session</h2>
-      <p class="slowcial-panel-copy">Name a reason outside the feed, then pick a soft bound. Breaks will remind you.</p>
+      <h2 class="slowcial-panel-title" id="slowcial-setup-title">${
+        extending ? "Extend this session" : "Set this session"
+      }</h2>
+      <p class="slowcial-panel-copy">${
+        extending
+          ? "Counters keep going. Add another soft bound — values below are added on top of where you left off."
+          : "Name a reason outside the feed, then pick a soft bound. Breaks will remind you."
+      }</p>
 
       <div class="slowcial-field">
         <label for="slowcial-motivation">Motivation</label>
@@ -631,12 +652,12 @@ async function showSetupOverlay() {
 
       <div class="slowcial-field-row">
         <div class="slowcial-field">
-          <label for="slowcial-target-posts">Target posts</label>
-          <input id="slowcial-target-posts" type="number" min="1" max="500" step="1" value="${defaults.targetPosts ?? ""}" placeholder="e.g. 20">
+          <label for="slowcial-target-posts">${extending ? "More posts" : "Target posts"}</label>
+          <input id="slowcial-target-posts" type="number" min="1" max="500" step="1" value="${prefillPosts ?? ""}" placeholder="e.g. 20">
         </div>
         <div class="slowcial-field">
-          <label for="slowcial-target-minutes">Max minutes</label>
-          <input id="slowcial-target-minutes" type="number" min="1" max="240" step="1" value="${defaults.targetMinutes ?? ""}" placeholder="e.g. 15">
+          <label for="slowcial-target-minutes">${extending ? "More minutes" : "Max minutes"}</label>
+          <input id="slowcial-target-minutes" type="number" min="1" max="240" step="1" value="${prefillMinutes ?? ""}" placeholder="e.g. 15">
         </div>
       </div>
 
@@ -653,14 +674,16 @@ async function showSetupOverlay() {
       <p class="slowcial-error" id="slowcial-setup-error"></p>
 
       <div class="slowcial-panel-actions">
-        <button type="button" class="slowcial-btn slowcial-btn-primary" id="slowcial-start-session">Start session</button>
+        <button type="button" class="slowcial-btn slowcial-btn-primary" id="slowcial-start-session">${
+          extending ? "Continue session" : "Start session"
+        }</button>
       </div>
     </div>
   `;
 
   const breakSelect = overlay.querySelector("#slowcial-break-every");
-  if (breakSelect && defaults.breakEvery) {
-    breakSelect.value = String(defaults.breakEvery);
+  if (breakSelect && prefillBreak) {
+    breakSelect.value = String(prefillBreak);
   }
 
   overlay.querySelector("#slowcial-start-session").addEventListener("click", () => {
@@ -703,30 +726,73 @@ async function startSessionFromForm() {
   }
 
   if (!targetPosts && !targetMinutes) {
-    if (errorEl) errorEl.textContent = "Set a post target, a time limit, or both.";
+    if (errorEl) {
+      errorEl.textContent = setupIsExtension
+        ? "Add more posts, more minutes, or both."
+        : "Set a post target, a time limit, or both.";
+    }
     return;
   }
 
-  viewedArticles = new WeakSet();
-  viewedCount = 0;
-  activeMs = 0;
-  runningSince = isTabActive() ? Date.now() : null;
-  pendingBoundArticle = null;
-  forcePostBound = false;
-  unmuteFeedMedia();
+  const extending = setupIsExtension && !!sessionIntent;
 
-  await setSessionIntent({
-    motivation,
-    targetPosts,
-    targetMinutes,
-    breakEvery,
-    startedAt: Date.now(),
-    activeMs: 0,
-    runningSince,
-    viewedCount: 0,
-    lastBreakAt: 0,
-    boundHitShown: false
-  });
+  if (extending) {
+    // Keep counters; form values are added on top of current progress.
+    const nextTargetPosts =
+      targetPosts != null ? viewedCount + targetPosts : null;
+    const elapsedMinutes = getActiveMs() / 60000;
+    const nextTargetMinutes =
+      targetMinutes != null ? Math.ceil(elapsedMinutes) + targetMinutes : null;
+
+    pendingBoundArticle = null;
+    forcePostBound = false;
+    unmuteFeedMedia();
+
+    if (runningSince == null && isTabActive()) {
+      runningSince = Date.now();
+    }
+
+    await setSessionIntent({
+      ...sessionIntent,
+      motivation,
+      targetPosts: nextTargetPosts,
+      targetMinutes: nextTargetMinutes,
+      breakEvery,
+      segmentPosts: targetPosts,
+      segmentMinutes: targetMinutes,
+      segmentBreakEvery: breakEvery,
+      activeMs,
+      runningSince,
+      viewedCount,
+      boundHitShown: false
+    });
+  } else {
+    viewedArticles = new WeakSet();
+    viewedCount = 0;
+    activeMs = 0;
+    runningSince = isTabActive() ? Date.now() : null;
+    pendingBoundArticle = null;
+    forcePostBound = false;
+    unmuteFeedMedia();
+
+    await setSessionIntent({
+      motivation,
+      targetPosts,
+      targetMinutes,
+      breakEvery,
+      segmentPosts: targetPosts,
+      segmentMinutes: targetMinutes,
+      segmentBreakEvery: breakEvery,
+      startedAt: Date.now(),
+      activeMs: 0,
+      runningSince,
+      viewedCount: 0,
+      lastBreakAt: 0,
+      boundHitShown: false
+    });
+  }
+
+  setupIsExtension = false;
 
   await browser.storage.sync.set({
     intentDefaults: {
@@ -822,6 +888,29 @@ function isArticleInFocus(article) {
   return rect.top <= center && rect.bottom >= center;
 }
 
+function isArticleInViewport(article) {
+  if (!article || !article.isConnected) return false;
+  const rect = article.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < window.innerHeight;
+}
+
+function isOtherArticleEncroaching(targetArticle) {
+  const targetRect = targetArticle.getBoundingClientRect();
+  const center = window.innerHeight / 2;
+  for (const article of getFeedArticles()) {
+    if (article === targetArticle) continue;
+    const rect = article.getBoundingClientRect();
+    // Only care about the next post coming up from below — ignore previous ones still peeking above.
+    if (rect.top < targetRect.top) continue;
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+    if (rect.top <= center && rect.bottom >= center) return true;
+    const visible =
+      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    if (visible > window.innerHeight * 0.18) return true;
+  }
+  return false;
+}
+
 function showBoundOverlay() {
   if (!sessionIntent) return;
   activeOverlay = "bound";
@@ -853,30 +942,12 @@ function showBoundOverlay() {
 async function extendSession() {
   if (!sessionIntent) return;
 
-  const patch = { boundHitShown: false };
-  if (sessionIntent.targetPosts != null && viewedCount >= sessionIntent.targetPosts) {
-    patch.targetPosts = sessionIntent.targetPosts + 10;
-  }
-  if (
-    sessionIntent.targetMinutes != null &&
-    getActiveMs() >= sessionIntent.targetMinutes * 60 * 1000
-  ) {
-    patch.targetMinutes = sessionIntent.targetMinutes + 5;
-  }
-
-  if (patch.targetPosts == null && patch.targetMinutes == null) {
-    if (sessionIntent.targetPosts != null) patch.targetPosts = sessionIntent.targetPosts + 10;
-    if (sessionIntent.targetMinutes != null) {
-      patch.targetMinutes = sessionIntent.targetMinutes + 5;
-    }
-  }
-
   pendingBoundArticle = null;
   forcePostBound = false;
-  await persistIntentPatch(patch);
+  await persistIntentPatch({ boundHitShown: false });
   unmuteFeedMedia();
-  removeOverlay();
-  updateWidgetValues();
+  // Re-open setup; counters stay. Motivation cleared; segment values prefilled.
+  await showSetupOverlay({ extending: true });
 }
 
 async function endSession({ closeTab = false } = {}) {
@@ -934,16 +1005,19 @@ function maybeShowBoundHit() {
 
   let postsHit = false;
   if (sessionIntent.targetPosts != null) {
-    if (forcePostBound || viewedCount > sessionIntent.targetPosts) {
-      // Past the target post (or recovered after refresh already past it).
+    if (forcePostBound) {
       postsHit = true;
     } else if (
       viewedCount >= sessionIntent.targetPosts &&
-      pendingBoundArticle &&
-      !isArticleInFocus(pendingBoundArticle)
+      pendingBoundArticle
     ) {
-      // Nth post left viewport center — gap before N+1.
-      postsHit = true;
+      // Block as soon as the Nth post leaves the viewfield, or the next one encroaches.
+      if (
+        !isArticleInViewport(pendingBoundArticle) ||
+        isOtherArticleEncroaching(pendingBoundArticle)
+      ) {
+        postsHit = true;
+      }
     }
   }
 
@@ -1077,12 +1151,21 @@ function getCurrentCenteredArticle() {
 
 function countCurrentArticle() {
   if (!sessionIntent) return;
-  if (activeOverlay === "setup") return;
+  if (activeOverlay === "setup" || activeOverlay === "bound") return;
+
+  // Once the post target is reached, never count/center into the next post —
+  // hold until the Nth leaves the viewfield, then show the bound overlay.
+  if (
+    sessionIntent.targetPosts != null &&
+    viewedCount >= sessionIntent.targetPosts &&
+    !sessionIntent.boundHitShown
+  ) {
+    maybeShowBoundHit();
+    return;
+  }
 
   const article = getCurrentCenteredArticle();
 
-  // Bound check runs even when the centered article was already counted,
-  // so we can fire after the Nth post leaves focus (before N+1).
   if (article && !viewedArticles.has(article) && activeOverlay === "none") {
     viewedArticles.add(article);
     article.setAttribute(VIEWED_ATTR, "1");
