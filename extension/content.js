@@ -39,6 +39,16 @@ let forcePostBound = false;
 let setupIsExtension = false;
 let feedMutedByBound = false;
 let feedMuteObserver = null;
+let feedScrollLocked = false;
+let lockedScrollX = 0;
+let lockedScrollY = 0;
+let savedHtmlOverflow = "";
+let savedBodyOverflow = "";
+let savedBodyPosition = "";
+let savedBodyTop = "";
+let savedBodyWidth = "";
+let savedBodyLeft = "";
+let savedBodyRight = "";
 
 function buildCss({ enabled, gapMode, scopeToMain }) {
   const allowed = new Set(["1", "1.5", "2"]);
@@ -433,6 +443,7 @@ async function clearSessionIntent() {
   pendingBoundArticle = null;
   forcePostBound = false;
   setupIsExtension = false;
+  setFeedScrollLocked(false);
   unmuteFeedMedia();
   try {
     await browser.storage.local.remove("sessionIntent");
@@ -618,6 +629,8 @@ function ensureOverlayRoot() {
 async function showSetupOverlay({ extending = false } = {}) {
   activeOverlay = "setup";
   setupIsExtension = extending;
+  // Keep scroll frozen through the extend decision form; unlock only for a fresh start.
+  setFeedScrollLocked(extending);
   const settings = await getSettings();
   const defaults = settings.intentDefaults || DEFAULTS.intentDefaults;
 
@@ -802,6 +815,7 @@ async function startSessionFromForm() {
     }
   });
 
+  setFeedScrollLocked(false);
   removeOverlay();
   await createOrUpdateWidget();
   startFeedScanning();
@@ -881,6 +895,114 @@ function unmuteFeedMedia() {
   }
 }
 
+function isScrollAllowedTarget(target) {
+  if (!(target instanceof Element)) return false;
+  // Allow typing / small overflow inside our dialog controls only.
+  return Boolean(target.closest(`#${OVERLAY_ID} textarea, #${OVERLAY_ID} input, #${OVERLAY_ID} select`));
+}
+
+function preventFeedScroll(event) {
+  if (!feedScrollLocked) return;
+  if (isScrollAllowedTarget(event.target)) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function preventFeedScrollKeys(event) {
+  if (!feedScrollLocked) return;
+  if (isScrollAllowedTarget(event.target)) return;
+  const block = new Set([
+    " ",
+    "Spacebar",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "PageUp",
+    "PageDown",
+    "Home",
+    "End"
+  ]);
+  if (block.has(event.key)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function freezeFeedScrollPosition(event) {
+  if (!feedScrollLocked) return;
+  // Pin any nested scroller Instagram uses, plus the window.
+  const target = event?.target;
+  if (target && target !== document && target !== window && target instanceof Element) {
+    if (target.closest(`#${OVERLAY_ID}`)) return;
+    if (typeof target.scrollTop === "number") {
+      if (target.dataset.slowcialScrollTop == null) {
+        target.dataset.slowcialScrollTop = String(target.scrollTop);
+      }
+      const lockedTop = Number(target.dataset.slowcialScrollTop);
+      if (target.scrollTop !== lockedTop) target.scrollTop = lockedTop;
+    }
+  }
+  if (window.scrollX !== lockedScrollX || window.scrollY !== lockedScrollY) {
+    window.scrollTo(lockedScrollX, lockedScrollY);
+  }
+}
+
+function setFeedScrollLocked(locked) {
+  if (locked === feedScrollLocked) return;
+  feedScrollLocked = locked;
+
+  if (locked) {
+    lockedScrollX = window.scrollX;
+    lockedScrollY = window.scrollY;
+    savedHtmlOverflow = document.documentElement.style.overflow;
+    savedBodyOverflow = document.body.style.overflow;
+    savedBodyPosition = document.body.style.position;
+    savedBodyTop = document.body.style.top;
+    savedBodyWidth = document.body.style.width;
+    savedBodyLeft = document.body.style.left;
+    savedBodyRight = document.body.style.right;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.body.style.overscrollBehavior = "none";
+    // Hard-freeze: body fixed so nested IG scroll roots can't keep feeding the next post.
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${lockedScrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+
+    window.addEventListener("wheel", preventFeedScroll, { passive: false, capture: true });
+    window.addEventListener("touchmove", preventFeedScroll, { passive: false, capture: true });
+    window.addEventListener("keydown", preventFeedScrollKeys, { capture: true });
+    window.addEventListener("scroll", freezeFeedScrollPosition, { passive: false, capture: true });
+    document.addEventListener("scroll", freezeFeedScrollPosition, { passive: false, capture: true });
+    return;
+  }
+
+  window.removeEventListener("wheel", preventFeedScroll, { capture: true });
+  window.removeEventListener("touchmove", preventFeedScroll, { capture: true });
+  window.removeEventListener("keydown", preventFeedScrollKeys, { capture: true });
+  window.removeEventListener("scroll", freezeFeedScrollPosition, { capture: true });
+  document.removeEventListener("scroll", freezeFeedScrollPosition, { capture: true });
+
+  document.documentElement.style.overflow = savedHtmlOverflow;
+  document.body.style.overflow = savedBodyOverflow;
+  document.documentElement.style.overscrollBehavior = "";
+  document.body.style.overscrollBehavior = "";
+  document.body.style.position = savedBodyPosition;
+  document.body.style.top = savedBodyTop;
+  document.body.style.width = savedBodyWidth;
+  document.body.style.left = savedBodyLeft;
+  document.body.style.right = savedBodyRight;
+  for (const el of document.querySelectorAll("[data-slowcial-scroll-top]")) {
+    delete el.dataset.slowcialScrollTop;
+  }
+  window.scrollTo(lockedScrollX, lockedScrollY);
+}
+
 function isArticleInFocus(article) {
   if (!article || !article.isConnected) return false;
   const rect = article.getBoundingClientRect();
@@ -915,6 +1037,7 @@ function showBoundOverlay() {
   if (!sessionIntent) return;
   activeOverlay = "bound";
   muteFeedMedia();
+  setFeedScrollLocked(true);
   const overlay = ensureOverlayRoot();
 
   overlay.innerHTML = `
@@ -953,6 +1076,7 @@ async function extendSession() {
 async function endSession({ closeTab = false } = {}) {
   pauseActiveClock();
   unmuteFeedMedia();
+  setFeedScrollLocked(false);
   pendingBoundArticle = null;
   forcePostBound = false;
   removeOverlay();
